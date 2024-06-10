@@ -1,0 +1,468 @@
+
+# ----------------
+# preparing data
+# ----------------
+# set the directory
+setwd("~/Desktop/GRI/soa05_tutorial-main") 
+source("metrics.r")
+library(dplyr)
+library(readr)
+library(wru)
+
+df <- readr::read_csv(
+  "stat-methods-imputing-race-ethnicity-data.csv",
+  col_types = cols(
+    GEOID_block = col_character(),
+    GEOID_blockgroup = col_character(),
+    GEOID_tract = col_character()
+  )
+) %>%
+  dplyr::rename(
+    surname = last_name,
+    first = first_name,
+    middle = middle_name,
+  ) %>%
+  dplyr::mutate(
+    state_code = stringr::str_sub(GEOID_block, 1L, 2L),
+    county = stringr::str_sub(GEOID_block, 3L, 5L),
+    tract = stringr::str_sub(GEOID_tract, 6L, 11L)
+  )
+
+fips_codes <- tigris::fips_codes %>%
+  dplyr::select(state, state_code) %>%
+  dplyr::distinct()
+
+df <- df %>%
+  dplyr::left_join(
+    fips_codes,
+    by = "state_code"
+  )
+
+# surname column to voter.file, and for geographic methods filter out rows with
+# US territories.
+
+territories <- c("AS", "GU", "MP", "PR", "VI")
+
+df_no_territories <- df %>%
+  dplyr::filter(!state %in% territories)
+
+# TODO: set path to output directory
+OUTPUT <- "results"
+
+#set.seed(1234)
+
+
+# Extract 5% of rows, randomly without replacement
+#subsample <- df_no_territories %>% sample_n(20, replace = FALSE)  
+
+----------------
+# SURNAME ONLY
+# ----------------
+
+library(wru)
+SA <- predict_race(voter.file = df_no_territories, surname.only = TRUE)
+
+SA <- SA %>% dplyr::rename(
+  nh_white = pred.whi,
+  nh_black = pred.bla,
+  asian = pred.asi,
+  hispanic = pred.his,
+  other = pred.oth
+)
+
+run_metrics(
+  SA,
+  c("nh_white", "nh_black", "asian", "hispanic", "other"),
+  "race",
+  "SA",
+  OUTPUT
+)
+
+# ----------------------
+# metrics for BISG model, name to use: surname 
+# ----------------------
+
+
+bisg  <- predict_race(voter.file = df_no_territories, census.geo = "tract", party = "PID", census.key="29caaead12373544ff9fb7db17cb01532b2e2468")
+
+bisg <- bisg %>% dplyr::rename(
+  nh_white = pred.whi,
+  nh_black = pred.bla,
+  asian = pred.asi,
+  hispanic = pred.his,
+  other = pred.oth
+)
+
+run_metrics(
+  bisg,
+  c("nh_white", "nh_black", "asian", "hispanic", "other"),
+  "race",
+  "BISG",
+  OUTPUT
+)
+
+# ----------------------
+# metrics for BIFSG model, surname, first+ BISG
+# ----------------------
+
+bifsg  <- predict_race(voter.file = df_no_territories, census.geo = "tract", party = "PID",names.to.use = "surname, first", census.key="29caaead12373544ff9fb7db17cb01532b2e2468")
+
+bifsg <- bifsg %>% dplyr::rename(
+  nh_white = pred.whi,
+  nh_black = pred.bla,
+  asian = pred.asi,
+  hispanic = pred.his,
+  other = pred.oth
+)
+
+run_metrics(
+  bifsg,
+  c("nh_white", "nh_black", "asian", "hispanic", "other"),
+  "race",
+  "BIFSG",
+  OUTPUT
+)
+
+# ----------------------
+# metrics for BIFSG model, surname, first, midde name and block - finer census + BISG 
+# ----------------------
+# must run the begining of the file til row sixty five and then run from this row
+OUTPUT <- "results/block"
+bifsg_new  <- predict_race(voter.file = df_no_territories, census.geo = "block", party = "PID",names.to.use = "surname, first", census.key="29caaead12373544ff9fb7db17cb01532b2e2468",model = "fBISG")
+
+bifsg_new  <- bifsg_new  %>% dplyr::rename(
+  nh_white = pred.whi,
+  nh_black = pred.bla,
+  asian = pred.asi,
+  hispanic = pred.his,
+  other = pred.oth
+)
+
+run_metrics(
+  bifsg_new ,
+  c("nh_white", "nh_black", "asian", "hispanic", "other"),
+  "race",
+  "BIFSG",
+  OUTPUT
+)
+
+
+# ----------------
+#  roc curve  
+# ----------------
+setwd("~/Desktop/GRI/soa05_tutorial-main") 
+library(readxl)
+library(fastDummies)
+
+BISG <- read_excel("data/bisg.xlsx")
+BISG <- fastDummies::dummy_cols(BISG, select_columns = "race")
+
+BIFSG <- read_excel("data/bifsg.xlsx")
+BIFSG <- fastDummies::dummy_cols(BIFSG, select_columns = "race")
+
+SA <- read.csv("data/SA.csv")
+SA <- fastDummies::dummy_cols(SA, select_columns = "race")
+
+
+
+get_auc_values <- function(df, cohorts) {
+  
+  auc_metrics <- list()
+  fpr_tprs<- list()
+  
+  for (cohort in cohorts) {
+    
+    fpr_tpr <- pROC::multiclass.roc(
+      df[[paste0("race_",cohort)]], df[[cohort]], levels = c(0, 1)
+    )
+    
+    auc_value <- pROC::auc(fpr_tpr)
+    auc_metrics[[cohort]] <- auc_value
+    fpr_tprs[[cohort]] <- fpr_tpr
+  }
+  
+  auc_metrics_df <- data.frame(
+    cohort = names(auc_metrics), auc = unlist(auc_metrics)
+  )
+  
+  return(fpr_tprs)
+}
+
+get_auc_plot <- function(name, fpr_tprs) {
+  plot(fpr_tprs[["nh_white"]][["rocs"]][[1]], main=name,
+       print.auc=T,
+       legacy.axes = T)
+  plot(fpr_tprs[["nh_black"]][["rocs"]][[1]],
+       add=T, col = 'red',
+       print.auc = T,
+       legacy.axes = T,
+       print.auc.adj = c(0,3))
+  plot(fpr_tprs[["asian"]][["rocs"]][[1]],add=T, col = 'blue',
+       print.auc=T,
+       legacy.axes = T,
+       print.auc.adj = c(0,5))
+  plot(fpr_tprs[["hispanic"]][["rocs"]][[1]],add=T, col = 'green',
+       print.auc=T,
+       legacy.axes = T,
+       print.auc.adj = c(0,7))
+  plot(fpr_tprs[["other"]][["rocs"]][[1]],add=T, col = 'orange',
+       print.auc=T,
+       legacy.axes = T,
+       print.auc.adj = c(0,9))
+  
+  legend('bottomright',
+         legend = c('white',
+                    'black',
+                    'asian', 
+                    'hispanic', 
+                    'other'),
+         col=c('black','red','blue', 'green', 'orange'),lwd=2)
+}
+# SA
+fpr_tprs_SA <- get_auc_values(SA, c("nh_white", "nh_black", "asian", "hispanic", "other"))
+get_auc_plot('AUC SA model', fpr_tprs_SA)
+
+
+# BISG
+fpr_tprs_BISG <- get_auc_values(BISG, c("nh_white", "nh_black", "asian", "hispanic", "other"))
+ get_auc_plot('AUC BISG model', fpr_tprs_BISG)
+
+# BISG
+fpr_tprs_BIFSG <- get_auc_values(BIFSG, c("nh_white", "nh_black", "asian", "hispanic", "other"))
+get_auc_plot('AUC BIFSG model', fpr_tprs_BIFSG)
+
+# ----------------
+#  confusion matrix  
+# ----------------
+# Install and load the writexl package
+library(writexl)
+
+get_confusion_matrix <- function(df, directory) {
+  prob_columns <- c("nh_white", "nh_black", "asian", "hispanic", "other")  # Update with your actual column names
+  df[prob_columns] <- lapply(df[prob_columns], as.numeric)
+  
+  # Find the index of the column with the maximum probability for each row
+  max_prob_index <- max.col(df[prob_columns], "first")
+  
+  # Get the corresponding class name based on the index
+  predicted <- prob_columns[max_prob_index]
+  
+  # Create confusion matrix
+  conf_matrix <- table(df$race, predicted)
+  
+  # Escribir el dataframe en un archivo Excel
+  write_xlsx(conf_matrix, directory)
+  return(conf_matrix)
+}
+  
+get_confusion_matrix(SA, "results/SA/confusion_matrix_SA.xlsx")
+get_confusion_matrix(BISG, "results/BISG/confusion_matrix_BISG.xlsx")
+get_confusion_matrix(BIFSG, "results/BIFSG/confusion_matrix_BIFSG.xlsx")
+
+# ----------------
+#  block level  
+# ----------------
+
+# solve missing values
+
+BIFSG <- na.omit(BIFSG)
+summary(BIFSG)
+
+#BIFSG %>% filter(is.na(asian))
+
+drop_na<- which(is.na(BIFSG$asian))
+
+drop_na_too<-which(is.na(BIFSG$ other ))
+ 
+clean_data <- BIFSG[-c( 1390,1775,16105,18539,33040,37958,44644,48998,49734,69673,79539,84241,97082,7238,10163,12963,20929,32485,38414,38855,40849,55666,61825,69552,80530,81462,84298,84954,95212),]
+summary(clean_data )
+
+# ----------------
+#  fully bayesian vs bayesian 
+# ----------------
+
+# verificar si hay zero counts df_no_territories
+df_no_territories %>% count(GEOID_tract,race) %>% mutate(Freq = n/sum(n))%>%
+  arrange( GEOID_tract)
+
+
+# fBIFSG
+fbifsg  <- predict_race(voter.file = df_no_territories, census.geo = "tract", party = "PID", names.to.use = "surname, first", census.key="29caaead12373544ff9fb7db17cb01532b2e2468", model = "fBISG")
+
+fbifsg <- fbifsg %>% dplyr::rename(
+  nh_white = pred.whi,
+  nh_black = pred.bla,
+  asian = pred.asi,
+  hispanic = pred.his,
+  other = pred.oth
+)
+
+write_xlsx(fbifsg, "fBISG_surname_first_tract.xlsx")
+
+# fully bayesian middle block
+summary(df_no_territories)
+
+fbifsg_middle  <- predict_race(voter.file = df_no_territories, census.geo = "block", party = "PID", names.to.use = "surname, first,middle", census.key="29caaead12373544ff9fb7db17cb01532b2e2468", model = "fBISG")
+
+fbifsg_middle  <- fbifsg_middle  %>% dplyr::rename(
+  nh_white = pred.whi,
+  nh_black = pred.bla,
+  asian = pred.asi,
+  hispanic = pred.his,
+  other = pred.oth
+)
+
+write_xlsx(fbifsg_middle , "fBISG_surname_first_middle_block.xlsx")
+
+# ----------------------
+# Metrics
+# ----------------------
+
+df <- fbifsg_middle  # change for every model
+# df <- df %>% dplyr::rename(
+#   nh_white = pred.whi,
+#   nh_black = pred.bla,
+#   asian = pred.asi,
+#   hispanic = pred.his,
+#   other = pred.oth
+# )
+
+prob_columns <- c("nh_white", "nh_black", "asian", "hispanic", "other")  # Update with your actual column names
+df[prob_columns] <- lapply(df[prob_columns], as.numeric)
+
+
+# Find the index of the column with the first maximum probability for each row
+first_index_max <- function(row) {
+  sorted_indices <- order(-row)
+  
+  second_index <- sorted_indices[1]
+  
+  return(second_index)
+}
+
+max_prob_index_first<- apply(df[prob_columns], 1, first_index_max )
+# Get the corresponding class name based on the index
+predicted <- prob_columns[max_prob_index_first]
+
+
+# Create confusion matrix
+conf_matrix <- table(df$race, predicted)
+
+
+# metrics
+df$predicted <-predicted 
+
+
+
+compute_recalls <- function(data, cohorts, race_pred_col, self_rep_race_col) {
+  #' Compute recall for each cohort
+  #' @param data data frame containing the predictions
+  #' @param cohorts vector of cohort names
+  #' @param race_pred_col name of prediction column
+  #' @param self_rep_race_col  name of self-reported race column
+  #' @return dataframe with recalls
+  recalls <- data.frame(cohort = character(), recall = numeric())
+  
+  for (cohort in cohorts) {
+    recall_value <- MLmetrics::Recall(
+      y_pred = data[[race_pred_col]],
+      y_true = data[[self_rep_race_col]],
+      positive = cohort
+    )
+    
+    result_row <- data.frame(cohort = cohort, recall = recall_value)
+    recalls <- rbind(recalls, result_row)
+  }
+  
+  return(recalls)
+}
+cohorts <- c("nh_white", "nh_black", "asian", "hispanic", "other")
+recalls <- compute_recalls(df, cohorts, "predicted", "race")
+
+
+
+
+compute_precisions <- function(data, cohorts, race_pred_col, self_rep_race_col) {
+  #' Compute precision for each cohort
+  #' @param data data frame containing the predictions
+  #' @param cohorts vector of cohort names
+  #' @param race_pred_col name of prediction column
+  #' @param self_rep_race_col  name of self-reported race column
+  #' @return dataframe with precisions
+  precisions <- data.frame(cohort = character(), precision = numeric())
+  
+  for (cohort in cohorts) {
+    precision_value <- MLmetrics::Precision(
+      y_pred = data[[race_pred_col]],
+      y_true = data[[self_rep_race_col]],
+      positive = cohort
+    )
+    
+    result_row <- data.frame(
+      cohort = cohort, precision = precision_value
+    )
+    precisions <- rbind(precisions, result_row)
+  }
+  
+  return(precisions)
+}
+precisions <- compute_precisions(df, cohorts, "predicted", "race")
+
+get_auc_values <- function(df, cohorts) {
+  
+  auc_metrics <- list()
+  fpr_tprs<- list()
+  
+  for (cohort in cohorts) {
+    
+    fpr_tpr <- pROC::multiclass.roc(
+      df[[paste0("race_",cohort)]], df[[cohort]], levels = c(0, 1)
+    )
+    
+    auc_value <- pROC::auc(fpr_tpr)
+    auc_metrics[[cohort]] <- auc_value
+    fpr_tprs[[cohort]] <- fpr_tpr
+  }
+  
+  auc_metrics_df <- data.frame(
+    cohort = names(auc_metrics), auc = unlist(auc_metrics)
+  )
+  
+  return(fpr_tprs)
+}
+
+library(fastDummies)
+df <- fastDummies::dummy_cols(df, select_columns = "race")
+
+get_auc_values <- function(df, cohorts) {
+  
+  auc_metrics <- list()
+  fpr_tprs<- list()
+  
+  for (cohort in cohorts) {
+    
+    fpr_tpr <- pROC::multiclass.roc(
+      df[[paste0("race_",cohort)]], df[[cohort]], levels = c(0, 1)
+    )
+    
+    auc_value <- pROC::auc(fpr_tpr)
+    auc_metrics[[cohort]] <- auc_value
+    fpr_tprs[[cohort]] <- fpr_tpr
+  }
+  
+  auc_metrics_df <- data.frame(
+    cohort = names(auc_metrics), auc = unlist(auc_metrics)
+  )
+  
+  return(fpr_tprs)
+}
+
+get_auc_values(df, c("nh_white", "nh_black", "asian", "hispanic", "other"))
+
+
+
+
+
+
+
+

@@ -30,11 +30,26 @@ census <- pivot_wider(raw_census_df,
 # calculate probabilities
 census <- census %>%
   mutate(
-    r_whi = (estimate_C02003_003 +moe_C02003_003)/rowSums(wide_df[3:14]),
-    r_bla = (estimate_C02003_004 + moe_C02003_004)/rowSums(wide_df[3:14]),
-    r_his = (estimate_C02003_005+moe_C02003_005)/rowSums(wide_df[3:14]),
-    r_asi = (estimate_C02003_006+moe_C02003_006)/rowSums(wide_df[3:14]),
-    r_oth = (estimate_C02003_007 + estimate_C02003_008 +moe_C02003_007+moe_C02003_008)/rowSums(wide_df[3:14])
+    r_whi = (estimate_C02003_003 +moe_C02003_003)/sum(census[3:14]),
+    r_bla = (estimate_C02003_004 + moe_C02003_004)/sum(census[3:14]),
+    r_his = (estimate_C02003_005+moe_C02003_005)/sum(census[3:14]),
+    r_asi = (estimate_C02003_006+moe_C02003_006)/sum(census[3:14]),
+    r_oth = (estimate_C02003_007 + estimate_C02003_008 +moe_C02003_007+moe_C02003_008)/sum(census[3:14])
+  )
+
+n_whi <- sum(census$r_whi)
+n_bla <- sum(census$r_bla)
+n_his <- sum(census$r_his)
+n_asi <- sum(census$r_asi)
+n_oth <- sum(census$r_oth)
+
+census <- census %>%
+  mutate(
+    r_whi = r_whi/n_whi ,
+    r_bla = r_bla/n_bla,
+    r_his = r_his/n_his,
+    r_asi = r_asi/n_asi,
+    r_oth = r_oth/n_oth 
   )
 
 save(census, file = "census_county.rda")

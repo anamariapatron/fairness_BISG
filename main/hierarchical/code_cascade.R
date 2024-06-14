@@ -52,10 +52,13 @@ df_no_territories <- df %>%
 
 #### model white and non white
 set.seed(123)
-muestra <- df_no_territories %>% 
-  group_by("race", "GEOID_tract") %>%
-  sample_frac(0.001)
+# if you want subsample run this 
+#muestra <- df_no_territories %>% 
+#group_by("race", "GEOID_tract") %>%
+#sample_frac(0.001)
 
+# for full sample run this 
+muestra <- df_no_territories
 
 muestra$GEOID <- paste0(muestra$state_code, muestra$county) 
 muestra$surname <- toupper(muestra$surname)
@@ -175,7 +178,7 @@ df$vec <- ifelse(df$vec  == "vec_asi", "asian",
 
 conf_matrix_vec <- table(df$race, df$vec )
 # we see a problem with minorities as well
-save(df, file = "results_hierarchichal_subsample99.rda")
+#save(df, file = "results_hierarchichal_subsample99.rda")
 
 
 # compare with treshold = 0.8 and 'cutting' the tree... the order matters!
@@ -327,6 +330,6 @@ recalls_pred <- compute_recalls(df, cohorts, "pred_race", "race")
 
 b<-cbind(precisions_pred, recalls_pred,precisions_vec, recalls_vec,precisions_bisg,recalls_bisg)
 write.xlsx(b, "metrics_draft.xlsx")
-write.xlsx(df, "fulldataset.xlsx")
+#write.xlsx(df, "fulldataset.xlsx")
 
 

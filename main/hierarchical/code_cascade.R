@@ -53,12 +53,12 @@ df_no_territories <- df %>%
 #### model white and non white
 set.seed(123)
 # if you want subsample run this 
-#muestra <- df_no_territories %>% 
-#group_by("race", "GEOID_tract") %>%
-#sample_frac(0.001)
+muestra <- df_no_territories %>% 
+group_by("race", "GEOID_tract") %>%
+sample_frac(0.001)
 
 # for full sample run this 
-muestra <- df_no_territories
+#muestra <- df_no_territories
 
 muestra$GEOID <- paste0(muestra$state_code, muestra$county) 
 muestra$surname <- toupper(muestra$surname)
@@ -73,9 +73,7 @@ census
 #geo <- data$NJ$tract
 
 # model: multiplication of probabilities
-# Assuming 'df' is your dataframe and 'variables_to_drop' is a vector of the variable names you want to remove
-#muestra <- muestra[, !(names(muestra) %in% c("p_whi", "p_bla", "p_asi", "p_oth", "p_nonwhi"))]
-#muestra[2, ]
+
 
 # paste p(S_i | R_i) from voters_file
 muestra <- merge(muestra, surnames2010, by = "surname", all.x = TRUE)
@@ -160,9 +158,9 @@ df[prob_columns] <- lapply(df[prob_columns], as.numeric)
 first_index_max <- function(row) {
   sorted_indices <- order(-row)
   
-  second_index <- sorted_indices[1]
+  first_index <- sorted_indices[1]
   
-  return(second_index)
+  return(first_index)
 }
 
 max_prob_index_first<- apply(df[prob_columns], 1, first_index_max )
@@ -171,14 +169,14 @@ df$vec <-predicted_vec
 
 df$vec <- ifelse(df$vec  == "vec_asi", "asian", 
                   ifelse(df$vec  == "vec_whi", "nh_white", 
-                         ifelse(df$vec  == "vec_other", "other",
+                         ifelse(df$vec  == "vec_oth", "other",
                                 ifelse(df$vec  == "vec_bla", "nh_black",
                                        ifelse(df$vec  == "vec_his", "hispanic", df$vec )))))
 
 
 conf_matrix_vec <- table(df$race, df$vec )
 # we see a problem with minorities as well
-#save(df, file = "results_hierarchichal_subsample99.rda")
+
 
 
 # compare with treshold = 0.8 and 'cutting' the tree... the order matters!
@@ -189,6 +187,8 @@ for (i in 1:nrow(df)) {
     df[i, "pred_race"] <- "asian"
   } else if (df[i, "pred_bla"] > 0.7) {
     df[i, "pred_race"] <- "nh_black"
+  }else if (df[i, "pred_his"] > 0.7){
+    df[i, "pred_race"] <- "hispanic"
   }else {
     df[i, "pred_race"] <- "other"
   }
@@ -201,18 +201,20 @@ conf_matrix_pred <- table(df$race, df$pred_race)
 prob_columns_bisg <- c("bisg_whi","bisg_asi","bisg_bla","bisg_his" ,"bisg_oth")   
 df[prob_columns_bisg] <- lapply(df[prob_columns_bisg], as.numeric)
 max_prob_index_first_bisg<- apply(df[prob_columns_bisg], 1, first_index_max )
-predicted_bisg <- prob_columns_bisg[max_prob_index_first]
+predicted_bisg <- prob_columns_bisg[max_prob_index_first_bisg]
 df$bisg <-predicted_bisg
 
 df$bisg <- ifelse(df$bisg == "bisg_asi", "asian", 
                        ifelse(df$bisg == "bisg_whi", "nh_white", 
-                              ifelse(df$bisg == "bisg_other", "other",
+                              ifelse(df$bisg == "bisg_oth", "other",
                                      ifelse(df$bisg == "bisg_bla", "nh_black",
                                             ifelse(df$bisg == "bisg_his", "hispanic", df$bisg)))))
 
 
 conf_matrix_bisg <- table(df$race, df$bisg)
 
+
+df[28, ]
 # export results
 library(openxlsx)
 write.xlsx(conf_matrix_pred, "conf_matrix_pred.xlsx") # cutting tree
@@ -332,4 +334,36 @@ b<-cbind(precisions_pred, recalls_pred,precisions_vec, recalls_vec,precisions_bi
 write.xlsx(b, "metrics_draft.xlsx")
 #write.xlsx(df, "fulldataset.xlsx")
 
+#save(df, file = "results_hierarchichal_fullsample.rda")
 
+# verification bisg SURNAME AND COUNTY LEVEL
+library(wru)
+SA <- predict_race(voter.file = df, census.geo = "county", surname.only = TRUE)
+
+SA <- SA %>% dplyr::rename(
+  nh_white = pred.whi,
+  nh_black = pred.bla,
+  asian = pred.asi,
+  hispanic = pred.his,
+  other = pred.oth
+)
+SA <- fastDummies::dummy_cols(SA, select_columns = "race")
+prob_columns <- c("nh_white", "nh_black", "asian", "hispanic", "other")  # Update with your actual column names
+SA[prob_columns] <- lapply(SA[prob_columns], as.numeric)
+
+
+# Find the index of the column with the first maximum probability for each row
+first_index_max <- function(row) {
+  sorted_indices <- order(-row)
+  
+  second_index <- sorted_indices[1]
+  
+  return(second_index)
+}
+
+max_prob_index_first<- apply(SA[prob_columns], 1, first_index_max )
+# Get the corresponding class name based on the index
+predicted <- prob_columns[max_prob_index_first]
+# Create confusion matrix
+SA$SA <-predicted
+conf_matrix <- table(SA$race, predicted)

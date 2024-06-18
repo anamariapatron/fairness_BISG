@@ -4,7 +4,7 @@
 
 
 # ----------------------
-# data preparation: trial with subsample n=99
+# data preparation
 # ----------------------            
 setwd("~/Desktop/GRI/cascade") 
 library(dplyr)
@@ -53,12 +53,12 @@ df_no_territories <- df %>%
 #### model white and non white
 set.seed(123)
 # if you want subsample run this 
-muestra <- df_no_territories %>% 
-group_by("race", "GEOID_tract") %>%
-sample_frac(0.001)
+# muestra <- df_no_territories %>% 
+# group_by("race", "GEOID_tract") %>%
+# sample_frac(0.001)
 
 # for full sample run this 
-#muestra <- df_no_territories
+muestra <- df_no_territories
 
 muestra$GEOID <- paste0(muestra$state_code, muestra$county) 
 muestra$surname <- toupper(muestra$surname)
@@ -67,21 +67,22 @@ muestra$surname <- toupper(muestra$surname)
 load("/Users/anamariapatron/Desktop/GRI/cascade/wru-main/data/surnames2010.RData")
 
 # load database geolocalization
-load("/Users/anamariapatron/Desktop/GRI/cascade/census_county.rda")
-census
+load("/Users/anamariapatron/Desktop/GRI/cascade/census_tract_decennial2020.rda")
+
 #data <- readRDS("census_test_nj_block_2010.rds")
 #geo <- data$NJ$tract
 
 # model: multiplication of probabilities
 
 
-# paste p(S_i | R_i) from voters_file
+# paste p(R_i |S_i ) from voters_file
 muestra <- merge(muestra, surnames2010, by = "surname", all.x = TRUE)
 
 #colnames(muestra)[colnames(muestra) == "geo_id"] <- "GEOID"
-# paste p(R_i | G_i) from census- counts
+# paste p(G_i| R_i ) from census- counts
 subset_census <- subset(census, select = c("GEOID","r_whi", "r_bla", "r_asi", "r_his","r_oth"))
-muestra <- merge(muestra, subset_census, by = "GEOID", all.x = TRUE)
+names(subset_census)[names(subset_census) == "GEOID"] <- "GEOID_tract"
+muestra <- merge(muestra, subset_census, by = "GEOID_tract", all.x = TRUE)
 
 # ----------------------
 # hierarchihal model
@@ -176,8 +177,10 @@ df$vec <- ifelse(df$vec  == "vec_asi", "asian",
 
 conf_matrix_vec <- table(df$race, df$vec )
 # we see a problem with minorities as well
-
-
+#CHECKMISSINGVALUES
+colSums(is.na(df))
+df <- na.omit(df)
+colSums(is.na(df))
 
 # compare with treshold = 0.8 and 'cutting' the tree... the order matters!
 for (i in 1:nrow(df)) {
@@ -214,7 +217,7 @@ df$bisg <- ifelse(df$bisg == "bisg_asi", "asian",
 conf_matrix_bisg <- table(df$race, df$bisg)
 
 
-df[28, ]
+
 # export results
 library(openxlsx)
 write.xlsx(conf_matrix_pred, "conf_matrix_pred.xlsx") # cutting tree

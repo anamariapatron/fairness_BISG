@@ -13,7 +13,7 @@ pred_surname <- read.csv("output/results/BIS_surname.csv")
 pred_surname_tract <- read.csv2("output/results/BISG_surname_tract.csv")
 pred_surname_first_tract <- read.csv2("output/results/BIFSG_surname_first_tract.csv")
 
-# Confusion matrix for each file
+# Maximum probability for each file
 define_label <- function(data){
   data <- data %>%
     rowwise() %>%
@@ -52,7 +52,7 @@ list_dataframes <- tibble(pred_surname = pred_surname,
                           pred_surname_tract = pred_surname_tract, 
                           pred_surname_first_tract = pred_surname_first_tract)
 
-name_dataframes <-names(list_dataframes)
+name_dataframes <- names(list_dataframes)
 
 # Overall accuracy
 overall <- map(
@@ -63,6 +63,7 @@ overall <- map(
   )
 )
 overall_acc <- overall %>% bind_rows()
+overall_acc
 
 # Accuracy per ethnicity group
 accuracy_race <- function(data, data_name, race) {
@@ -96,3 +97,8 @@ overall_acc <- overall_acc %>%
 
 res <- group %>% bind_rows(overall_acc)
 View(res)
+
+res_surname <- res %>% filter(dataframe == "pred_surname")
+res_surname <- res_surname %>% rename(ref_surname = accuracy)
+res <- res %>% left_join(res_surname %>% select(race, ref_surname), by="race")
+res <- res %>% mutate(diff_surname = accuracy-ref_surname)

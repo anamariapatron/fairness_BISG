@@ -6,12 +6,12 @@
 # ----------------------
 # data preparation
 # ----------------------            
-setwd("~/Desktop/GRI/cascade") 
+#setwd("~/Desktop/GRI/cascade") 
 library(dplyr)
 library(readr)
 
 df <- readr::read_csv(
-  "stat-methods-imputing-race-ethnicity-data.csv",
+  "data/stat-methods-imputing-race-ethnicity-data.csv",
   col_types = cols(
     GEOID_block = col_character(),
     GEOID_blockgroup = col_character(),
@@ -64,10 +64,10 @@ muestra$GEOID <- paste0(muestra$state_code, muestra$county)
 muestra$surname <- toupper(muestra$surname)
 
 # load database surnames
-load("/Users/anamariapatron/Desktop/GRI/cascade/wru-main/data/surnames2010.RData")
+load("data/surname/surnames2010.RData")
 
 # load database geolocalization
-load("/Users/anamariapatron/Desktop/GRI/cascade/census_tract_decennial2020.rda")
+load("data/geolocation/census_tract_decennial2020.rda")
 
 #data <- readRDS("census_test_nj_block_2010.rds")
 #geo <- data$NJ$tract

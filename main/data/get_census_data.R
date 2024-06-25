@@ -4,6 +4,9 @@ library(tidycensus)
 library(stringr)
 library(tidyr)
 
+# ----------------------
+# Get data at county level
+# ----------------------  
 
 census_api_key("29caaead12373544ff9fb7db17cb01532b2e2468")
 
@@ -56,28 +59,21 @@ census <- census %>%
 save(census, file = "census_county.rda")
 
 
-### ############
-###tract#######
-### #############
+# ----------------------
+# Get data at tractlevel
+# ----------------------  
 
 
-# 2020 Decennial Census Variables
-decennial_2020_vars <- load_variables(
-  year = 2020, 
-  "pl", 
-  cache = TRUE
-)
-# P1_003N White                                                          
-# P1_004N black                                     
-# P1_005N American Indian and Alaska Native alone"                                
-# P1_006N asian                                                          
-# P1_007N Native Hawaiian and Other Pacific Islander alone"                     
-# P1_008N Some Other Race alone"  
-# P2_002N hispanic" 
+library(dplyr)
+library(tibble)
+library(tidycensus)
+library(stringr)
+library(tidyr)
 
 vars_dec2020 <- c("P2_002N","P1_003N", "P1_004N", "P1_005N", "P1_006N", "P1_007N", "P1_008N")
 estados <-  c("AK", "AL", "AR", "AZ", "CA", "CO", "CT", "DC", "DE", "FL", "GA", "HI", "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME", "MI", "MN", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VA", "VT", "WA", "WI", "WV", "WY")
 # Data 
+census_api_key("29caaead12373544ff9fb7db17cb01532b2e2468")
 census_data2020 = get_decennial(
   geography = "tract",
   state = estados,
@@ -85,6 +81,12 @@ census_data2020 = get_decennial(
   year = 2020,
   sumfile = "pl"
 )
+decennial_2020_vars <- load_variables(
+  year = 2020, 
+  "pl", 
+  cache = TRUE
+)
+
 d<-decennial_2020_vars[grep("hispanic", decennial_2020_vars$label, ignore.case = TRUE), ]
 print(d,n = 334)
 #usamos este
@@ -105,29 +107,22 @@ census <- pivot_wider(raw_census_df,
 # P2_002N hispanic" 
 
 # calculate probabilities
-denominator <- sum(census[c("P1_003N", "P1_004N", "P1_005N", "P1_006N", "P1_007N","P1_008N","P2_002N")])  
-census <- census %>%
-  mutate(
-    r_whi = (P1_003N)/denominator,
-    r_bla = (P1_004N)/denominator,
-    r_his = (P2_002N)/denominator,
-    r_asi = (P1_006N)/denominator,
-    r_oth = (P1_005N+P1_007N+P1_008N)/denominator
-  )
 #p(G_i| R_i )=p(R_i | G_i) *P( G_i)/P( R_i)=#counts_for_race_j_in_geo_i/#counts_all_races_in_geo*#counts_all_races_in_geo/#count_in_total/#count_total_races_j/#count_in_total
-n_whi <- sum(census$r_whi)
-n_bla <- sum(census$r_bla)
-n_his <- sum(census$r_his)
-n_asi <- sum(census$r_asi)
-n_oth <- sum(census$r_oth)
-
 census <- census %>%
   mutate(
-    r_whi = r_whi/n_whi ,
-    r_bla = r_bla/n_bla,
-    r_his = r_his/n_his,
-    r_asi = r_asi/n_asi,
-    r_oth = r_oth/n_oth 
+    r_whi = (P1_003N)/sum(census$P1_003N),
+    r_bla = (P1_004N)/sum(census$P1_004N),
+    r_his = (P2_002N)/sum(census$P2_002N),
+    r_asi = (P1_006N)/sum(census$P1_006N),
+    r_oth = (P1_005N+P1_007N+P1_008N)/sum(census[c("P1_005N", "P1_007N", "P1_008N")])
+  )
+# we follow hierarchical: white -> asia -> balck -> hispanic -> other. The order matters and probabilities depends on the order 
+census <- census %>%
+  mutate(
+    r_nonwhi  = (P1_004N+P2_002N+P1_006N+P1_005N+P1_007N+P1_008N)/sum(census[c("P1_004N","P2_002N","P1_006N","P1_005N","P1_007N","P1_008N")]),
+    r_nonasi = (P1_004N+P2_002N+P1_005N+P1_007N+P1_008N)/sum(census[c("P1_004N","P2_002N","P1_005N","P1_007N","P1_008N")]),
+    r_nonbla = (P2_002N+P1_005N+P1_007N+P1_008N)/sum(census[c("P2_002N","P1_005N","P1_007N","P1_008N")]),
+    r_nonhis = (P1_005N+P1_007N+P1_008N)/sum(census[c("P1_005N","P1_007N","P1_008N")])
   )
 
 save(census, file = "census_tract_decennial2020.rda")

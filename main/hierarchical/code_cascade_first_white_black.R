@@ -94,7 +94,7 @@ names(subset_census)[names(subset_census) == "GEOID"] <- "GEOID_tract"
 muestra <- merge(muestra, subset_census, by = "GEOID_tract", all.x = TRUE)
 
 # ----------------------
-# hierarchihal model
+# hierarchical model
 # ----------------------
 # first stage: white vs non white
 muestra$p_nonwhi <- muestra$p_bla + muestra$p_his + muestra$p_asi + muestra$p_oth

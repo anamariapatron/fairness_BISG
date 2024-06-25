@@ -61,7 +61,7 @@ set.seed(123)
 # for full sample run this 
 muestra <- df_no_territories
 
-muestra$GEOID <- paste0(muestra$state_code, muestra$county) 
+muestra$GEOID <- paste0(muestra$state_code, muestra$county, muestra$tract) 
 muestra$surname <- toupper(muestra$surname)
 
 # load database surnames:https://github.com/kosukeimai/wru/tree/main/data
@@ -89,7 +89,7 @@ muestra <- merge(muestra, first_nameRaceProbs, by = "first", all.x = TRUE)
 
 #colnames(muestra)[colnames(muestra) == "geo_id"] <- "GEOID"
 # paste p(G_i| R_i ) from census- counts
-subset_census <- subset(census, select = c("GEOID","r_whi", "r_bla", "r_asi", "r_his","r_oth"))
+subset_census <- subset(census, select = c("GEOID","r_whi", "r_bla", "r_asi", "r_his","r_oth","r_nonwhi","r_nonbla","r_nonasi","r_nonhis"))
 names(subset_census)[names(subset_census) == "GEOID"] <- "GEOID_tract"
 muestra <- merge(muestra, subset_census, by = "GEOID_tract", all.x = TRUE)
 
@@ -98,7 +98,6 @@ muestra <- merge(muestra, subset_census, by = "GEOID_tract", all.x = TRUE)
 # ----------------------
 # first stage: white vs non white
 muestra$p_nonwhi <- muestra$p_bla + muestra$p_his + muestra$p_asi + muestra$p_oth
-muestra$r_nonwhi <- muestra$r_bla + muestra$r_his + muestra$r_asi + muestra$r_oth
 muestra$f_nonwhi <- muestra$f_bla + muestra$f_his + muestra$f_asi + muestra$f_oth
 muestra$pred_whi <- muestra$p_whi* muestra$r_whi* muestra$f_whi
 muestra$pred_nonwhi <- muestra$p_nonwhi* muestra$r_nonwhi* muestra$f_nonwhi
@@ -108,7 +107,6 @@ muestra$pred_nonwhi <-muestra$pred_nonwhi/denominator
 
 # second stage: asian vs non asian
 muestra$p_nonasi <- muestra$p_bla + muestra$p_his + muestra$p_oth
-muestra$r_nonasi <- muestra$r_bla + muestra$r_his + muestra$r_oth
 muestra$f_nonasi <- muestra$f_bla + muestra$f_his + muestra$f_oth
 muestra$pred_asi <- muestra$p_asi* muestra$r_asi #* muestra$f_asi
 muestra$pred_nonasi <- muestra$p_nonasi* muestra$r_nonasi #* muestra$f_nonasi
@@ -118,7 +116,6 @@ muestra$pred_nonasi <-muestra$pred_nonasi/denominator
 
 # third stage: black vs non black
 muestra$p_nonbla <-   muestra$p_his + muestra$p_oth
-muestra$r_nonbla <-  muestra$r_his + muestra$r_oth
 muestra$f_nonbla <- muestra$f_his + muestra$f_oth
 muestra$pred_bla <- muestra$p_bla* muestra$r_bla * muestra$f_bla
 muestra$pred_nonbla <- muestra$p_nonbla* muestra$r_nonbla * muestra$f_nonbla
@@ -128,7 +125,6 @@ muestra$pred_nonbla <-muestra$pred_nonbla/denominator
 
 # fourth stage: hispanic vs non hispanic
 muestra$p_nonhis <-  muestra$p_oth
-muestra$r_nonhis <-  muestra$r_oth
 muestra$f_nonhis <-  muestra$f_oth
 muestra$pred_his <- muestra$p_his* muestra$r_his #* muestra$f_his
 muestra$pred_nonhis <- muestra$p_nonhis* muestra$r_nonhis #* muestra$f_nonhis

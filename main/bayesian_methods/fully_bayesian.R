@@ -15,8 +15,30 @@ load("data/geolocation/census_tract_decennial2020.rda")
 str(census)
 
 ## Contains P(R|S)
-load("data/surname/surnames2010.RData")
-str(surnames2010)
+load("data/surname/last_nameRaceProbs.rData")
+surnames <- last_nameRaceProbs
+surnames <- surnames %>% rename(
+  surname = name,
+  p_whi = whi,
+  p_bla = bla,
+  p_his = his,
+  p_asi = asi,
+  p_oth = oth
+)
+str(surnames)
+
+## Contains P(S|R)
+load("data/surname/last_raceNameProbs.rData")
+surnames_inv <- last_raceNameProbs
+surnames_inv <- surnames_inv %>% rename(
+  surname = name,
+  p_inv_whi = whi,
+  p_inv_bla = bla,
+  p_inv_his = his,
+  p_inv_asi = asi,
+  p_inv_oth = oth
+)
+str(surnames_inv)
 
 # Apply the methodology on a subsample first: voters file
 # Voters file with BISG surname + tract prediction
@@ -33,25 +55,30 @@ bisg_al <- bisg_al %>% rename(white_bisg_wru = nh_white,
 
 zero_counts <- bisg_al %>% filter(
   white_bisg_wru == 0 | black_bisg_wru == 0 | hispa_bisg_wru == 0 | asian_bisg_wru == 0 | other_bisg_wru == 0
-  )
+)
 
 nrow(zero_counts)/nrow(bisg_al)*100 # almost 11% of zero counts
 
 # Implementing BISG without wru
 ## P(R|S)
 bisg_al <- bisg_al %>% mutate(surname = toupper(surname))
-bisg_al <- bisg_al %>% left_join(surnames2010, by="surname")
-which(is.na(bisg_al), arr.ind = TRUE) # row 1161 --> delete
-bisg_al <- bisg_al[-1161,]
+
+bisg_al <- bisg_al %>% left_join(surnames, by="surname") # P(R|S)
+bisg_al <- bisg_al %>% left_join(surnames_inv, by="surname") # P(S|R)
+which(is.na(bisg_al), arr.ind = TRUE)
+to_delete <- unique(which(is.na(bisg_al), arr.ind = TRUE)[,1])
+bisg_al <- bisg_al[-to_delete,] # 1486 obs.
+
 census_al <- census_al %>% mutate(GEOID_tract = as.numeric(GEOID))
 bisg_al <- bisg_al %>% left_join(census_al %>% select(
   GEOID_tract, r_whi, r_bla, r_his, r_asi, r_oth),
-  by="GEOID_tract")
+  by="GEOID_tract") # P(G|R)
 bisg_al <- bisg_al %>% mutate(white_bisg_ = p_whi*r_whi,
                               black_bisg_ = p_bla*r_bla,
                               hispa_bisg_ = p_his*r_his,
                               asian_bisg_ = p_asi*r_asi,
                               other_bisg_ = p_oth*r_oth)
+# Normalizing probabilities
 n_race <- rowSums(bisg_al %>% select(white_bisg_, 
                                      black_bisg_,
                                      hispa_bisg_,
@@ -63,11 +90,11 @@ bisg_al <- bisg_al %>% mutate(white_bisg = white_bisg_/n_race,
                               hispa_bisg = hispa_bisg_/n_race,
                               asian_bisg = asian_bisg_/n_race,
                               other_bisg = other_bisg_/n_race)
-bisg_al <- bisg_al[,-c(32:37)]
+bisg_al <- bisg_al[,-c(37:42)]
 
 # Implementing fully bayesian
 ## Initialization
-iter <- 1000
+iter <- 5
 burnin <- iter%/%2
 ### n_rg
 # Computes the maximum probability
@@ -82,8 +109,8 @@ bisg_al <- bisg_al %>%
       asian_bisg == max_bisg ~ "asian_bisg",
       other_bisg == max_bisg ~ "other_bisg",
       TRUE ~ NA_character_
-      )
-    ) %>%
+    )
+  ) %>%
   ungroup()
 
 n_rg <- bisg_al %>% 
@@ -114,7 +141,7 @@ n_rg <- n_rg %>%
   group_by(
     GEOID_tract,
     tract
-    ) %>%
+  ) %>%
   summarise(
     init_white = sum(white_bisg),
     init_black = sum(black_bisg),
@@ -144,21 +171,21 @@ N <- nrow(bisg_al)
 pred_matrix <- matrix(data=0, nrow=N, ncol=J)
 colnames(pred_matrix) <- races
 
+# N_rg
 census_al <- census_al %>%
   mutate(N_other = P1_005N+P1_007N+P1_008N,
          N_white = P1_003N,
          N_black = P1_004N,
          N_asian = P1_006N,
          N_hispa = P2_002N
-         )
+  )
 
-m<-1
-i<-1
+m <- 1
+i <- 1
 j <- 1
 
 for (m in 1:iter){
   for (i in 1:N){
-    #r_i <- bisg_al$race_fb[i]
     r_i <- substr(bisg_al$pred_bisg[i], 1, 5)
     g_i <- bisg_al$GEOID_tract[i]
     n_rg[which(n_rg$GEOID_tract == g_i), paste0("init_", r_i)] <- 
@@ -169,16 +196,16 @@ for (m in 1:iter){
       probs_i[j] <- as.numeric(
         log(
           n_rg[which(n_rg$GEOID_tract == g_i), paste0("init_", r_j)] + 
-          census_al[which(census_al$GEOID_tract == g_i), paste0("N_", r_j)] +
-          1
+            census_al[which(census_al$GEOID_tract == g_i), paste0("N_", r_j)] +
+            1
         )
       )
       probs_i[j] <- as.numeric(
         probs_i[j] + log(
-        bisg_al[i, paste0("p_", substr(r_j, 1, 3))] + 
-          1e-8
+          bisg_al[i, paste0("p_inv_", substr(r_j, 1, 3))] + 
+            1e-8
         )
-        )
+      )
     }
     probs_i <- probs_i - max(probs_i)
     probs_i <- exp(probs_i)
@@ -196,4 +223,3 @@ for (m in 1:iter){
     }
   }
 }
-

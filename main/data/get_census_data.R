@@ -125,7 +125,7 @@ census <- census %>%
     r_nonhis = (P1_005N+P1_007N+P1_008N)/sum(census[c("P1_005N","P1_007N","P1_008N")])
   )
 
-save(census, file = "census_tract_decennial2020.rda")
+save(census, file = "census_tract_decennial2020_agathe.rda")
 
 
 

@@ -12,6 +12,7 @@ library(tidyr)
 
 ## Contains counts by tract and race: N_rg and P(G|R) calculated by Ana
 load("data/geolocation/census_tract_decennial2020.rda")
+census <- census_final
 str(census)
 
 ## Contains P(R|S)
@@ -41,7 +42,7 @@ surnames_inv <- surnames_inv %>% rename(
 str(surnames_inv)
 
 # Apply the methodology on a subsample first: voters file
-# Voters file with BISG surname + tract prediction
+# Voters file with BISG surname + tract prediction (with wru package)
 pred_surname_tract <- read.csv2("output/results/BISG_surname_tract.csv")
 
 # Select one county: Alabama
@@ -66,7 +67,7 @@ bisg_al <- bisg_al %>% mutate(surname = toupper(surname))
 bisg_al <- bisg_al %>% left_join(surnames, by="surname") # P(R|S)
 bisg_al <- bisg_al %>% left_join(surnames_inv, by="surname") # P(S|R)
 which(is.na(bisg_al), arr.ind = TRUE)
-to_delete <- unique(which(is.na(bisg_al), arr.ind = TRUE)[,1])
+to_delete <- unique(which(is.na(bisg_al), arr.ind = TRUE)[,1]) # 15 obs. to delete
 bisg_al <- bisg_al[-to_delete,] # 1486 obs.
 
 census_al <- census_al %>% mutate(GEOID_tract = as.numeric(GEOID))
@@ -90,14 +91,14 @@ bisg_al <- bisg_al %>% mutate(white_bisg = white_bisg_/n_race,
                               hispa_bisg = hispa_bisg_/n_race,
                               asian_bisg = asian_bisg_/n_race,
                               other_bisg = other_bisg_/n_race)
-bisg_al <- bisg_al[,-c(37:42)]
+bisg_al <- bisg_al[,-c(37:42)] # not the same probabilities than with BISG wru...
 
 # Implementing fully bayesian
 ## Initialization
 iter <- 5
 burnin <- iter%/%2
 ### n_rg
-# Computes the maximum probability
+# Computes the maximum probability and predicted race obtained with BISG (without using wru)
 bisg_al <- bisg_al %>%
   rowwise() %>%
   mutate(
@@ -113,6 +114,7 @@ bisg_al <- bisg_al %>%
   ) %>%
   ungroup()
 
+# Group observations by unicity for surname and tract
 n_rg <- bisg_al %>% 
   select(
     surname,
@@ -130,6 +132,7 @@ n_rg <- bisg_al %>%
     seen = n()
   )
 
+# Pivot the table to get counts by surname and tract
 n_rg <- n_rg %>%
   pivot_wider(
     names_from = pred_bisg, 
@@ -137,6 +140,7 @@ n_rg <- n_rg %>%
   )
 n_rg[is.na(n_rg)] <- 0
 
+# Final table with counts by tract
 n_rg <- n_rg %>%
   group_by(
     GEOID_tract,
@@ -149,9 +153,10 @@ n_rg <- n_rg %>%
     init_asian = sum(asian_bisg),
     init_other = sum(other_bisg)
   )
+# Number of zero counts obtained with BISG (without using wru)
 length(unique(which(n_rg==0,arr.ind=TRUE)[,1])) # 368 zero counts
 
-# Number of ethnic groups
+# Number of ethnic groups and observations
 bisg_al <- bisg_al %>%
   mutate(
     race_fb = case_when(
@@ -167,11 +172,11 @@ races <- unique(bisg_al$race_fb)
 J <- length(unique(bisg_al$race_fb))
 # Number of records in voters file
 N <- nrow(bisg_al)
-# Output matrix
+# Output matrix with fBISG predicted probabilities
 pred_matrix <- matrix(data=0, nrow=N, ncol=J)
 colnames(pred_matrix) <- races
 
-# N_rg
+# N_rg (obtained with census data at tract level)
 census_al <- census_al %>%
   mutate(N_other = P1_005N+P1_007N+P1_008N,
          N_white = P1_003N,
